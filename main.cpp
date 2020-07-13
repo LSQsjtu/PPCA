@@ -1,9 +1,9 @@
-#include <bits/stdc++.h>
-using namespace std;
+#include "predict.hpp"
 
-ofstream out;
-int x[32] = {0}, reg_lock[32] = {0}, pc = 0, memory_lock = 0;
+int x[32] = {0}, pc = 0;
+bool reg_lock[32] = {0};
 unsigned char memory[0x20000];
+prediction pred;
 
 enum inst
 {
@@ -44,6 +44,12 @@ enum inst
     SB,
     SH,
     SW
+};
+
+enum state
+{
+    avail,
+    busy
 };
 
 char inst_name[37][8] = {
@@ -135,7 +141,7 @@ void read_in_memory() //读入内存
     }
 }
 
-int signed_extend(int data, int bits)
+int signed_extend(int &data, int bits)
 {
     if (data & (1 << bits)) //取符号位
         data |= 0xffffffff >> bits << bits;
@@ -157,131 +163,86 @@ int I_offset(int in)
     return (in >> 20);
 }
 
-int S_offset(int bin[])
+int S_offset(int in)
 {
-    int immediate = 0;
-    if (bin[31])
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            if (bin[i + 7] == 0)
-            {
-                immediate += 1 << i;
-            }
-        }
-        for (int i = 5; i < 11; i++)
-        {
-            if (bin[i + 20] == 0)
-            {
-                immediate += 1 << i;
-            }
-        }
-        immediate = -immediate - 1;
-    }
-    else
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            if (bin[i + 7])
-            {
-                immediate += 1 << i;
-            }
-        }
-        for (int i = 5; i < 11; i++)
-        {
-            if (bin[i + 20])
-            {
-                immediate += 1 << i;
-            }
-        }
-    }
-    return immediate;
+    int imm = 0;
+    imm = (in >> 7) & 31;
+    imm += ((in >> 25) & 127) << 5;
+    signed_extend(imm, 11);
+    return imm;
 }
 
-int J_offset(int bin[])
+int J_offset(int in)
 {
-    int immediate = 0;
-    if (bin[31])
-    {
-        immediate = 1;
-        for (int i = 1; i < 11; i++)
-        {
-            if (bin[i + 20] == 0)
-            {
-                immediate += (1 << i);
-            }
-        }
-        if (bin[20] == 0)
-        {
-            immediate += 1 << 11;
-        }
-        for (int i = 12; i < 20; i++)
-        {
-            if (bin[i] == 0)
-            {
-                immediate += 1 << i;
-            }
-        }
-        immediate = -immediate - 1;
-    }
-    else
-    {
-        for (int i = 1; i < 11; i++)
-        {
-            if (bin[i + 20])
-            {
-                immediate += 1 << i;
-            }
-        }
-        if (bin[20])
-        {
-            immediate += 1 << 11;
-        }
-        for (int i = 12; i < 20; i++)
-        {
-            if (bin[i])
-            {
-                immediate += 1 << i;
-            }
-        }
-    }
-    return immediate;
+    int imm = 0;
+    imm = (in >> 20) & 2046;
+    imm += ((in >> 20) & 1) << 11;
+    imm += ((in >> 12) & 255) << 12;
+    imm += ((in >> 31) & 1) << 20;
+    signed_extend(imm, 20);
+    return imm;
 }
 
 struct instruction
 {
-    int ret, rd, rs1, rs2, immediate, inst, reg_pc, shamt;
+    int ret, rd, rs1, rs2, immediate, inst, reg_pc, shamt, state;
     unsigned int sum;
-    int *bin;
     bool Three_cycle, jump_flag;
 
     instruction()
     {
         ret = 0, rd = 0, rs1 = 0, rs2 = 0, immediate = 0, inst = 0, reg_pc = 0, shamt = 0;
         sum = 0;
-        bin = new int[32];
-        Three_cycle = true;
-        jump_flag = 0;
+        Three_cycle = false;
+        jump_flag = false;
+        state = avail;
+    }
+
+    instruction(instruction *temp)
+    {
+        ret = temp->ret;
+        rd = temp->rd;
+        rs1 = temp->rs1;
+        rs2 = temp->rs2;
+        immediate = temp->immediate;
+        inst = temp->inst;
+        reg_pc = temp->reg_pc;
+        shamt = temp->shamt;
+        Three_cycle = temp->Three_cycle;
     }
 
     ~instruction()
     {
         ret = 0, rd = 0, rs1 = 0, rs2 = 0, immediate = 0, inst = 0, reg_pc = 0, shamt = 0;
         sum = 0;
-        delete bin;
         Three_cycle = true;
-        jump_flag = 0;
     }
 
-    void show_information(){
-        //out << "after ID: pc:" << hex << reg_pc << dec << "  inst:" << inst_name[inst] << "\nrd:" << rd << "  rs1:" << rs1 << "  rs2:" << rs2 << "  imm:" << hex << immediate << "  inst:" << sum << endl;
+    instruction operator=(const instruction *temp)
+    {
+        ret = temp->ret;
+        rd = temp->rd;
+        rs1 = temp->rs1;
+        rs2 = temp->rs2;
+        immediate = temp->immediate;
+        inst = temp->inst;
+        reg_pc = temp->reg_pc;
+        shamt = temp->shamt;
+        Three_cycle = temp->Three_cycle;
+        jump_flag = temp->jump_flag;
+        return *this;
+    }
+
+    void show_information()
+    {
+        cout << "after ID: pc:" << hex << reg_pc << dec << "  inst:" << inst_name[inst] << "\nrd:" << rd << "  rs1:" << rs1 << "  rs2:" << rs2 << "  imm:" << hex << immediate << "  inst:" << sum << endl;
     };
 
     void end()
     {
         if (sum == unsigned(0x0ff00513))
         {
-            cout << (((unsigned int)x[10]) & 255);
+            cout << dec << (((unsigned int)x[10]) & 255);
             exit(0);
         }
     }
@@ -293,35 +254,35 @@ struct instruction
         {
         case 55: //LUI
             inst = LUI;
-            rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
+            rd = (sum >> 7) & 0x1f;
             immediate = sum >> 12 << 12;
             break;
 
         case 23: //AUIPC
             inst = AUIPC;
-            rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
+            rd = (sum >> 7) & 0x1f;
             immediate = sum >> 12 << 12;
             break;
 
         case 111: //JAL
             inst = JAL;
-            rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
-            immediate = J_offset(bin);
+            rd = (sum >> 7) & 0x1f;
+            immediate = J_offset(sum);
             break;
 
         case 103: //JALR
             inst = JALR;
-            rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
-            rs1 = bin[15] + 2 * bin[16] + 4 * bin[17] + 8 * bin[18] + 16 * bin[19];
+            rd = (sum >> 7) & 0x1f;
+            rs1 = (sum >> 15) & 0x1f;
             immediate = I_offset(sum);
             break;
 
         case 99: //BEQ……
-            rs1 = bin[15] + 2 * bin[16] + 4 * bin[17] + 8 * bin[18] + 16 * bin[19];
-            rs2 = bin[20] + 2 * bin[21] + 4 * bin[22] + 8 * bin[23] + 16 * bin[24];
+            rs1 = (sum >> 15) & 0x1f;
+            rs2 = (sum >> 20) & 0x1f;
             immediate = B_offset(sum);
             {
-                int function = bin[12] + 2 * bin[13] + 4 * bin[14];
+                int function = (sum >> 12) & 7;
                 switch (function)
                 {
                 case 0:
@@ -355,11 +316,12 @@ struct instruction
             break;
 
         case 3: //LB……
-            this->rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
-            this->rs1 = bin[15] + 2 * bin[16] + 4 * bin[17] + 8 * bin[18] + 16 * bin[19];
+            rd = (sum >> 7) & 0x1f;
+            rs1 = (sum >> 15) & 0x1f;
+            Three_cycle = true;
             immediate = I_offset(sum);
             {
-                int function = bin[12] + 2 * bin[13] + 4 * bin[14];
+                int function = (sum >> 12) & 7;
                 switch (function)
                 {
                 case 0:
@@ -386,11 +348,12 @@ struct instruction
             break;
 
         case 35: //SB……
-            rs1 = bin[15] + 2 * bin[16] + 4 * bin[17] + 8 * bin[18] + 16 * bin[19];
-            rs2 = bin[20] + 2 * bin[21] + 4 * bin[22] + 8 * bin[23] + 16 * bin[24];
-            immediate = S_offset(bin);
+            rs1 = (sum >> 15) & 0x1f;
+            rs2 = (sum >> 20) & 0x1f;
+            Three_cycle = true;
+            immediate = S_offset(sum);
             {
-                int function = bin[12] + 2 * bin[13] + 4 * bin[14];
+                int function = (sum >> 12) & 7;
                 switch (function)
                 {
                 case 0:
@@ -412,11 +375,11 @@ struct instruction
             break;
 
         case 19: //ADDI……
-            this->rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
-            this->rs1 = bin[15] + 2 * bin[16] + 4 * bin[17] + 8 * bin[18] + 16 * bin[19];
+            rd = (sum >> 7) & 0x1f;
+            rs1 = (sum >> 15) & 0x1f;
             immediate = I_offset(sum);
             {
-                int function = bin[12] + 2 * bin[13] + 4 * bin[14];
+                int function = (sum >> 12) & 7;
                 switch (function)
                 {
                 case 0:
@@ -445,18 +408,12 @@ struct instruction
 
                 case 1:
                     inst = SLLI;
-                    for (int i = 0; i < 6; i++)
-                    {
-                        shamt += bin[i + 20] << i;
-                    }
+                    shamt = (sum >> 20) & 63;
                     break;
 
                 case 5:
-                    for (int i = 0; i < 6; i++)
-                    {
-                        shamt += bin[i + 20] << i;
-                    }
-                    if (bin[30])
+                    shamt = (sum >> 20) & 63;
+                    if ((sum >> 30) & 1)
                     {
                         inst = SRAI;
                     }
@@ -470,15 +427,15 @@ struct instruction
             break;
 
         case 51: //ADD……
-            rd = bin[7] + 2 * bin[8] + 4 * bin[9] + 8 * bin[10] + 16 * bin[11];
-            rs1 = bin[15] + 2 * bin[16] + 4 * bin[17] + 8 * bin[18] + 16 * bin[19];
-            rs2 = bin[20] + 2 * bin[21] + 4 * bin[22] + 8 * bin[23] + 16 * bin[24];
+            rd = (sum >> 7) & 0x1f;
+            rs1 = (sum >> 15) & 0x1f;
+            rs2 = (sum >> 20) & 0x1f;
             {
-                int function = bin[12] + 2 * bin[13] + 4 * bin[14];
+                int function = (sum >> 12) & 7;
                 switch (function)
                 {
                 case 0:
-                    if (bin[30])
+                    if ((sum >> 30) & 1)
                     {
                         inst = SUB;
                     }
@@ -505,7 +462,7 @@ struct instruction
                     break;
 
                 case 5:
-                    if (bin[30])
+                    if ((sum >> 30) & 1)
                     {
                         inst = SRA;
                     }
@@ -522,14 +479,17 @@ struct instruction
             }
             break;
         }
+
+        end();
+
         if (reg_lock[rs1] || reg_lock[rs2])
         {
             return false;
         }
 
-        if (opt == 99 || opt == 103 || opt == 111)
+        if (rd != 0)
         {
-            memory_lock = 1;
+            reg_lock[rd] = true;
         }
         return true;
     }
@@ -745,20 +705,17 @@ struct instruction
             break;
 
         case SB:
-            end();
             tmp = x[rs2];
             memory[immediate] = tmp & 255;
             break;
 
         case SH:
-            end();
             tmp = x[rs2];
             memory[immediate] = tmp & 255;
             memory[immediate + 1] = (tmp >> 8) & 255;
             break;
 
         case SW:
-            end();
             tmp = x[rs2];
             for (int i = 0; i < 4; i++)
             {
@@ -769,7 +726,6 @@ struct instruction
             break;
 
         default:
-            Three_cycle = false;
             break;
         }
     }
@@ -777,9 +733,9 @@ struct instruction
     void WB()
     {
         if (rd)
-            x[rd] = ret;
-        //out << "x[rd]=" << x[rd] << "  x[rs1]=" << x[rs1] << "  x[rs2]=" << x[rs2] << '\n';
-        //out << "---------------------------------------------------\n";
+            x[rd] = ret, reg_lock[rd] = false;
+        //cout << "x[rd]=" << x[rd] << "  x[rs1]=" << x[rs1] << "  x[rs2]=" << x[rs2] << '\n';
+        //cout << "---------------------------------------------------\n";
     }
 };
 
@@ -788,17 +744,46 @@ void IF(instruction *it)
     it->reg_pc = pc;
     for (int i = 0; i < 4; i++)
     {
-        unsigned int tmp = memory[pc + i];
-        unsigned int x = tmp;
+        unsigned int x = memory[pc + i];
         it->sum += (x << 8 * i);
-        for (int j = 0; j < 8; j++)
-        {
-            it->bin[8 * i + j] = tmp % 2;
-            tmp >>= 1;
-        }
     }
     pc += 4;
 }
+
+struct IF_ID
+{
+    instruction inst;
+    int state;
+
+    IF_ID(instruction *temp) : inst(temp)
+    {
+        state = avail;
+    }
+    IF_ID()
+    {
+        state = avail;
+    }
+};
+
+struct EXE_MEM
+{
+    instruction inst;
+    int state;
+    EXE_MEM()
+    {
+        state = avail;
+    }
+};
+
+struct MEM_WB
+{
+    int state;
+    instruction inst;
+    MEM_WB()
+    {
+        state = avail;
+    }
+};
 
 int main()
 {
@@ -807,30 +792,87 @@ int main()
     cout.tie(0);
 
     freopen("pi.data", "r", stdin);
-    //out.open("magic_debug_unfinished.txt");
+    //freopen("magic_debug_unfinished.txt", "w", stdout);
 
     instruction *lsq = new instruction;
-    int cnt = 0;
+    IF_ID fetch;
+    EXE_MEM mem;
+    MEM_WB wb;
+
+    int cycle = 0;
 
     read_in_memory();
     pc = 0;
     while (true)
-    //for (int i = 0; i < 700; i++)
     {
-        lsq = new instruction;
-        //cycle[cnt] = new instruction;
-        IF(lsq);
-        lsq->ID();
-        lsq->show_information();
-        if (lsq->sum == unsigned(0x0ff00513))
+        ++cycle;
+
+        if (wb.state == busy)
         {
-            cout << (((unsigned int)x[10]) & 255);
-            break;
+            wb.inst.WB();
+            wb.state = avail;
         }
-        lsq->EXE();
-        lsq->MEM();
-        lsq->WB();
-        delete lsq;
+
+        if (mem.state == busy && wb.state == avail)
+        {
+            if (!mem.inst.Three_cycle)
+            {
+                wb.inst = &mem.inst;
+                mem.state = avail;
+                wb.state = busy;
+            }
+            else
+            {
+                static int time = 0;
+
+                if (time == 2)
+                {
+                    time = 0;
+                    mem.inst.MEM();
+                    wb.inst = &mem.inst;
+                    mem.state = avail;
+                    wb.state = busy;
+                }
+                else
+                {
+                    time++;
+                }
+            }
+        }
+
+        if (fetch.state == busy && mem.state == avail)
+        {
+            fetch.inst.EXE();
+            if (fetch.inst.jump_flag)
+            {
+                lsq->state = avail;
+                delete lsq;
+                lsq = new instruction;
+            }
+            mem.inst = &fetch.inst;
+            fetch.state = avail;
+            mem.state = busy;
+        }
+
+        if (fetch.state == avail && lsq->state == busy)
+        {
+            if (lsq->ID())
+            {
+                //lsq->show_information();
+                fetch.inst = lsq;
+                fetch.state = busy;
+                delete lsq;
+                lsq = new instruction;
+            }
+        }
+
+        if (lsq->state == avail)
+        {
+            bool predictor = pred.get_predict(pc);
+            if (!predictor)
+                IF(lsq);
+            lsq->state = busy;
+        }
     }
 
     return 0;
