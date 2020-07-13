@@ -791,7 +791,7 @@ int main()
     cin.tie(0);
     cout.tie(0);
 
-    freopen("pi.data", "r", stdin);
+    //freopen("pi.data", "r", stdin);
     //freopen("magic_debug_unfinished.txt", "w", stdout);
 
     instruction *lsq = new instruction;
@@ -868,8 +868,8 @@ int main()
 
         if (lsq->state == avail)
         {
-            bool predictor = pred.get_predict(pc);
-            if (!predictor)
+            //bool predictor = pred.get_predict(pc);
+            //if (!predictor)
                 IF(lsq);
             lsq->state = busy;
         }
