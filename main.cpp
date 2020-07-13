@@ -3,7 +3,6 @@
 int x[32] = {0}, pc = 0;
 bool reg_lock[32] = {0};
 unsigned char memory[0x20000];
-prediction pred;
 
 enum inst
 {
