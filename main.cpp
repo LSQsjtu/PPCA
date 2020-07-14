@@ -1,7 +1,7 @@
 #include "predict.hpp"
 
-int x[32] = {0}, locknum[32] = {0}, pc = 0, correct_time = 0, wrong_time = 0;
-bool reg_lock[32] = {0}, correct = 0;
+int x[32] = {0}, pc = 0, correct_time = 0, wrong_time = 0;
+bool reg_lock[32] = {0};
 unsigned char memory[0x20000];
 
 enum inst
@@ -242,7 +242,7 @@ struct instruction
         {
             cout << dec << (((unsigned int)x[10]) & 255);
             //cout << '\n'
-            // << wrong_time << "   " << correct_time;
+              //   << wrong_time << "   " << correct_time;
             exit(0);
         }
     }
@@ -487,13 +487,9 @@ struct instruction
         end();
     }
 
-    bool EXE()
+    void EXE()
     {
         ret = x[rd];
-        if (reg_lock[rs1] || reg_lock[rs2])
-        {
-            return false;
-        }
 
         if (rd != 0)
         {
@@ -547,7 +543,7 @@ struct instruction
                     jump_flag = false;
                 }
             }
-            history[reg_pc & 0xff].update(jump_flag);
+            history[(reg_pc >> 2) & 0xff].update(jump_flag);
             break;
 
         case BNE:
@@ -576,7 +572,7 @@ struct instruction
                     jump_flag = false;
                 }
             }
-            history[reg_pc & 0xff].update(jump_flag);
+            history[(reg_pc >> 2) & 0xff].update(jump_flag);
             break;
 
         case BGE:
@@ -605,7 +601,7 @@ struct instruction
                     jump_flag = false;
                 }
             }
-            history[reg_pc & 0xff].update(jump_flag);
+            history[(reg_pc >> 2) & 0xff].update(jump_flag);
             break;
 
         case BLT:
@@ -634,7 +630,7 @@ struct instruction
                     jump_flag = false;
                 }
             }
-            history[reg_pc & 0xff].update(jump_flag);
+            history[(reg_pc >> 2) & 0xff].update(jump_flag);
             break;
 
         case BLTU:
@@ -663,7 +659,7 @@ struct instruction
                     jump_flag = false;
                 }
             }
-            history[reg_pc & 0xff].update(jump_flag);
+            history[(reg_pc >> 2) & 0xff].update(jump_flag);
             break;
 
         case BGEU:
@@ -692,7 +688,7 @@ struct instruction
                     jump_flag = false;
                 }
             }
-            history[reg_pc & 0xff].update(jump_flag);
+            history[(reg_pc >> 2) & 0xff].update(jump_flag);
             break;
 
         case LB:
@@ -799,7 +795,6 @@ struct instruction
             ret = x[rs1] | x[rs2];
             break;
         }
-        return true;
     }
 
     void MEM()
@@ -966,8 +961,12 @@ int main()
 
         if (fetch.state == busy && mem.state == avail)
         {
-            if (fetch.inst.EXE())
+            if (reg_lock[fetch.inst.rs1] || reg_lock[fetch.inst.rs2])
             {
+            }
+            else
+            {
+                fetch.inst.EXE();
                 if (fetch.inst.jump_flag)
                 {
                     lsq->state = avail;

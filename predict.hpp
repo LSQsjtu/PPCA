@@ -17,9 +17,9 @@ struct prediction
         if (predict == 3) // 11
             predict = jump ? 3 : 2;
         else if (predict == 2) // 10
-            predict = jump ? 3 : 1;
+            predict = jump ? 3 : 0;
         else if (predict == 1) // 01
-            predict = jump ? 2 : 0;
+            predict = jump ? 3 : 0;
         else // 00
             predict = jump ? 1 : 0;
     }
@@ -31,7 +31,7 @@ bool prediction::get_predict(int pc)
 {
     int pos = (pc >> 2) & 0xff;
 
-    if (history[pos].predict == 0 || history[pos].predict == 3)
+    if (history[pos].predict == 0 || history[pos].predict == 1)
     {
         return false;
     }
