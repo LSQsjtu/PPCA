@@ -100,7 +100,6 @@ void read_in_memory() //读入内存
         if (c[0] == '@')
         {
             pc = 0;
-            //int len=strlen(c);
             for (int i = 1; i < 9; i++)
             {
                 int tmp;
