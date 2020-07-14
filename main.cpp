@@ -1,7 +1,7 @@
 #include "predict.hpp"
 
-int x[32] = {0}, pc = 0;
-bool reg_lock[32] = {0};
+int x[32] = {0}, locknum[32] = {0}, pc = 0, correct_time = 0, wrong_time = 0;
+bool reg_lock[32] = {0}, correct = 0;
 unsigned char memory[0x20000];
 
 enum inst
@@ -242,11 +242,13 @@ struct instruction
         if (sum == unsigned(0x0ff00513))
         {
             cout << dec << (((unsigned int)x[10]) & 255);
+            //cout << '\n'
+                // << wrong_time << "   " << correct_time;
             exit(0);
         }
     }
 
-    bool ID()
+    void ID()
     {
         int opt = memory[reg_pc] & 127;
         switch (opt)
@@ -261,12 +263,14 @@ struct instruction
             inst = AUIPC;
             rd = (sum >> 7) & 0x1f;
             immediate = sum >> 12 << 12;
+            jump_flag = true;
             break;
 
         case 111: //JAL
             inst = JAL;
             rd = (sum >> 7) & 0x1f;
             immediate = J_offset(sum);
+            jump_flag = true;
             break;
 
         case 103: //JALR
@@ -274,11 +278,13 @@ struct instruction
             rd = (sum >> 7) & 0x1f;
             rs1 = (sum >> 15) & 0x1f;
             immediate = I_offset(sum);
+            jump_flag = true;
             break;
 
         case 99: //BEQ……
             rs1 = (sum >> 15) & 0x1f;
             rs2 = (sum >> 20) & 0x1f;
+            jump_flag = pred.get_predict(reg_pc);
             immediate = B_offset(sum);
             {
                 int function = (sum >> 12) & 7;
@@ -480,7 +486,11 @@ struct instruction
         }
 
         end();
+    }
 
+    bool EXE()
+    {
+        ret = x[rd];
         if (reg_lock[rs1] || reg_lock[rs2])
         {
             return false;
@@ -490,12 +500,6 @@ struct instruction
         {
             reg_lock[rd] = true;
         }
-        return true;
-    }
-
-    void EXE()
-    {
-        ret = x[rd];
         switch (inst)
         {
         case LUI:
@@ -505,68 +509,191 @@ struct instruction
         case AUIPC:
             pc = reg_pc + immediate;
             ret = pc;
-            jump_flag = true;
             break;
 
         case JAL:
             ret = reg_pc + 4;
             pc = reg_pc + immediate;
-            jump_flag = true;
             break;
 
         case JALR:
             ret = reg_pc + 4;
             pc = x[rs1] + immediate;
-            jump_flag = true;
             pc = pc & (~1);
             break;
 
         case BEQ:
             if (x[rs1] == x[rs2])
             {
-                jump_flag = true;
+                if (jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = true;
+                }
                 pc = reg_pc + immediate;
             }
+            else
+            {
+                if (!jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = false;
+                }
+            }
+            history[reg_pc & 0xff].update(jump_flag);
             break;
 
         case BNE:
             if (x[rs1] != x[rs2])
             {
-                jump_flag = true;
+                if (jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = true;
+                }
                 pc = reg_pc + immediate;
             }
+            else
+            {
+                if (!jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = false;
+                }
+            }
+            history[reg_pc & 0xff].update(jump_flag);
             break;
 
         case BGE:
             if (x[rs1] >= x[rs2])
             {
-                jump_flag = true;
+                if (jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = true;
+                }
                 pc = reg_pc + immediate;
             }
+            else
+            {
+                if (!jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = false;
+                }
+            }
+            history[reg_pc & 0xff].update(jump_flag);
             break;
 
         case BLT:
             if (x[rs1] < x[rs2])
             {
-                jump_flag = true;
+                if (jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = true;
+                }
                 pc = reg_pc + immediate;
             }
+            else
+            {
+                if (!jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = false;
+                }
+            }
+            history[reg_pc & 0xff].update(jump_flag);
             break;
 
         case BLTU:
             if (unsigned(x[rs1]) < unsigned(x[rs2]))
             {
-                jump_flag = true;
+                if (jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = true;
+                }
                 pc = reg_pc + immediate;
             }
+            else
+            {
+                if (!jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = false;
+                }
+            }
+            history[reg_pc & 0xff].update(jump_flag);
             break;
 
         case BGEU:
             if (unsigned(x[rs1]) >= unsigned(x[rs2]))
             {
-                jump_flag = true;
+                if (jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = true;
+                }
                 pc = reg_pc + immediate;
             }
+            else
+            {
+                if (!jump_flag)
+                {
+                    correct_time++;
+                }
+                else
+                {
+                    wrong_time++;
+                    jump_flag = false;
+                }
+            }
+            history[reg_pc & 0xff].update(jump_flag);
             break;
 
         case LB:
@@ -673,6 +800,7 @@ struct instruction
             ret = x[rs1] | x[rs2];
             break;
         }
+        return true;
     }
 
     void MEM()
@@ -790,7 +918,7 @@ int main()
     cin.tie(0);
     cout.tie(0);
 
-    //freopen("pi.data", "r", stdin);
+    freopen("pi.data", "r", stdin);
     //freopen("magic_debug_unfinished.txt", "w", stdout);
 
     instruction *lsq = new instruction;
@@ -798,14 +926,12 @@ int main()
     EXE_MEM mem;
     MEM_WB wb;
 
-    int cycle = 0;
+    bool next_IF = true;
 
     read_in_memory();
     pc = 0;
     while (true)
     {
-        ++cycle;
-
         if (wb.state == busy)
         {
             wb.inst.WB();
@@ -841,35 +967,38 @@ int main()
 
         if (fetch.state == busy && mem.state == avail)
         {
-            fetch.inst.EXE();
-            if (fetch.inst.jump_flag)
+            if (fetch.inst.EXE())
             {
-                lsq->state = avail;
-                delete lsq;
-                lsq = new instruction;
+                if (fetch.inst.jump_flag)
+                {
+                    lsq->state = avail;
+                    delete lsq;
+                    lsq = new instruction;
+                }
+                next_IF = true;
+                mem.inst = &fetch.inst;
+                fetch.state = avail;
+                mem.state = busy;
             }
-            mem.inst = &fetch.inst;
-            fetch.state = avail;
-            mem.state = busy;
         }
 
         if (fetch.state == avail && lsq->state == busy)
         {
-            if (lsq->ID())
+            lsq->ID();
+            //lsq->show_information();
+            fetch.inst = lsq;
+            fetch.state = busy;
+            if (fetch.inst.jump_flag)
             {
-                //lsq->show_information();
-                fetch.inst = lsq;
-                fetch.state = busy;
-                delete lsq;
-                lsq = new instruction;
+                next_IF = false;
             }
+            delete lsq;
+            lsq = new instruction;
         }
 
-        if (lsq->state == avail)
+        if (next_IF && lsq->state == avail)
         {
-            //bool predictor = pred.get_predict(pc);
-            //if (!predictor)
-                IF(lsq);
+            IF(lsq);
             lsq->state = busy;
         }
     }

@@ -24,14 +24,14 @@ struct prediction
             predict = jump ? 1 : 0;
     }
     bool get_predict(int pc);
-}pred;
+} pred;
 prediction history[0xff];
 
 bool prediction::get_predict(int pc)
 {
-    int pos = pc & 0xff;
+    int pos = (pc >> 2) & 0xff;
 
-    if (history[pos].predict == 0 || history[pos].predict == 3)
+    if (history[pos].predict == 2 || history[pos].predict == 3)
     {
         return true;
     }
