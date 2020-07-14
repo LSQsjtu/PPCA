@@ -31,13 +31,13 @@ bool prediction::get_predict(int pc)
 {
     int pos = (pc >> 2) & 0xff;
 
-    if (history[pos].predict == 2 || history[pos].predict == 3)
+    if (history[pos].predict == 0 || history[pos].predict == 3)
     {
-        return true;
+        return false;
     }
     else
     {
-        return false;
+        return true;
     }
 }
 

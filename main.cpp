@@ -243,7 +243,7 @@ struct instruction
         {
             cout << dec << (((unsigned int)x[10]) & 255);
             //cout << '\n'
-                // << wrong_time << "   " << correct_time;
+            // << wrong_time << "   " << correct_time;
             exit(0);
         }
     }
@@ -918,7 +918,7 @@ int main()
     cin.tie(0);
     cout.tie(0);
 
-    freopen("pi.data", "r", stdin);
+    //freopen("pi.data", "r", stdin);
     //freopen("magic_debug_unfinished.txt", "w", stdout);
 
     instruction *lsq = new instruction;
