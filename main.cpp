@@ -1,7 +1,7 @@
 #include "predict.hpp"
 
-int x[32] = {0}, pc = 0, correct_time = 0, wrong_time = 0;
-bool reg_lock[32] = {0};
+int x[32] = {0}, locknum[32] = {0}, pc = 0, correct_time = 0, wrong_time = 0;
+bool reg_lock[32] = {0}, load[32] = {0};
 unsigned char memory[0x20000];
 
 enum inst
@@ -183,13 +183,13 @@ int J_offset(int in)
 
 struct instruction
 {
-    int ret, rd, rs1, rs2, immediate, inst, reg_pc, shamt, state;
+    int ret, rd, rs1, rs2, immediate, inst, reg_pc, shamt, state, tmp1, tmp2;
     unsigned int sum;
     bool Three_cycle, jump_flag;
 
     instruction()
     {
-        ret = 0, rd = 0, rs1 = 0, rs2 = 0, immediate = 0, inst = 0, reg_pc = 0, shamt = 0;
+        ret = 0, rd = 0, rs1 = 0, rs2 = 0, immediate = 0, inst = 0, reg_pc = 0, shamt = 0, tmp1 = tmp2 = 0;
         sum = 0;
         Three_cycle = false;
         jump_flag = false;
@@ -226,6 +226,8 @@ struct instruction
         inst = temp->inst;
         reg_pc = temp->reg_pc;
         shamt = temp->shamt;
+        tmp1 = temp->tmp1;
+        tmp2 = temp->tmp2;
         Three_cycle = temp->Three_cycle;
         jump_flag = temp->jump_flag;
         return *this;
@@ -242,12 +244,12 @@ struct instruction
         {
             cout << dec << (((unsigned int)x[10]) & 255);
             //cout << '\n'
-              //   << wrong_time << "   " << correct_time;
+            //   << wrong_time << "   " << correct_time;
             exit(0);
         }
     }
 
-    void ID()
+    bool ID()
     {
         int opt = memory[reg_pc] & 127;
         switch (opt)
@@ -323,6 +325,7 @@ struct instruction
             rd = (sum >> 7) & 0x1f;
             rs1 = (sum >> 15) & 0x1f;
             Three_cycle = true;
+            load[rd] = true;
             immediate = I_offset(sum);
             {
                 int function = (sum >> 12) & 7;
@@ -484,17 +487,25 @@ struct instruction
             break;
         }
 
-        end();
-    }
-
-    void EXE()
-    {
-        ret = x[rd];
+        if (reg_lock[rs1] || reg_lock[rs2])
+        {
+            return false;
+        }
 
         if (rd != 0)
         {
             reg_lock[rd] = true;
         }
+
+        tmp2 = x[rs2];
+        tmp1 = x[rs1];
+        end();
+        return true;
+    }
+
+    void EXE()
+    {
+        ret = x[rd];
         switch (inst)
         {
         case LUI:
@@ -513,12 +524,12 @@ struct instruction
 
         case JALR:
             ret = reg_pc + 4;
-            pc = x[rs1] + immediate;
+            pc = tmp1 + immediate;
             pc = pc & (~1);
             break;
 
         case BEQ:
-            if (x[rs1] == x[rs2])
+            if (tmp1 == tmp2)
             {
                 if (jump_flag)
                 {
@@ -547,7 +558,7 @@ struct instruction
             break;
 
         case BNE:
-            if (x[rs1] != x[rs2])
+            if (tmp1 != tmp2)
             {
                 if (jump_flag)
                 {
@@ -576,7 +587,7 @@ struct instruction
             break;
 
         case BGE:
-            if (x[rs1] >= x[rs2])
+            if (tmp1 >= tmp2)
             {
                 if (jump_flag)
                 {
@@ -605,7 +616,7 @@ struct instruction
             break;
 
         case BLT:
-            if (x[rs1] < x[rs2])
+            if (tmp1 < tmp2)
             {
                 if (jump_flag)
                 {
@@ -634,7 +645,7 @@ struct instruction
             break;
 
         case BLTU:
-            if (unsigned(x[rs1]) < unsigned(x[rs2]))
+            if (unsigned(tmp1) < unsigned(tmp2))
             {
                 if (jump_flag)
                 {
@@ -663,7 +674,7 @@ struct instruction
             break;
 
         case BGEU:
-            if (unsigned(x[rs1]) >= unsigned(x[rs2]))
+            if (unsigned(tmp1) >= unsigned(tmp2))
             {
                 if (jump_flag)
                 {
@@ -692,107 +703,107 @@ struct instruction
             break;
 
         case LB:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case LH:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case LW:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case LBU:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case LHU:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case SB:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case SH:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case SW:
-            immediate += x[rs1];
+            immediate += tmp1;
             break;
 
         case ADDI:
-            ret = x[rs1] + immediate;
+            ret = tmp1 + immediate;
             break;
 
         case SLTI:
-            ret = x[rs1] < immediate;
+            ret = tmp1 < immediate;
             break;
 
         case SLTIU:
-            ret = unsigned(x[rs1]) < immediate;
+            ret = unsigned(tmp1) < immediate;
             break;
 
         case XORI:
-            ret = x[rs1] ^ immediate;
+            ret = tmp1 ^ immediate;
             break;
 
         case ORI:
-            ret = x[rs1] | immediate;
+            ret = tmp1 | immediate;
             break;
 
         case ANDI:
-            ret = x[rs1] & immediate;
+            ret = tmp1 & immediate;
             break;
 
         case SLLI:
-            ret = x[rs1] << shamt;
+            ret = tmp1 << shamt;
             break;
 
         case SRAI:
-            ret = x[rs1] >> shamt;
+            ret = tmp1 >> shamt;
             break;
 
         case SRLI:
-            ret = unsigned(x[rs1]) >> shamt;
+            ret = unsigned(tmp1) >> shamt;
             break;
 
         case SUB:
-            ret = x[rs1] - x[rs2];
+            ret = tmp1 - tmp2;
             break;
 
         case ADD:
-            ret = x[rs1] + x[rs2];
+            ret = tmp1 + tmp2;
             break;
 
         case SLL:
-            ret = x[rs1] << x[rs2];
+            ret = tmp1 << tmp2;
             break;
 
         case SLT:
-            ret = x[rs1] < x[rs2];
+            ret = tmp1 < tmp2;
             break;
 
         case SLTU:
-            ret = unsigned(x[rs1]) < unsigned(x[rs2]);
+            ret = unsigned(tmp1) < unsigned(tmp2);
             break;
 
         case XOR:
-            ret = x[rs1] ^ x[rs2];
+            ret = tmp1 ^ tmp2;
             break;
 
         case SRA:
-            ret = x[rs1] >> x[rs2];
+            ret = tmp1 >> tmp2;
             break;
 
         case SRL:
-            ret = unsigned(x[rs1]) >> x[rs2];
+            ret = unsigned(tmp1) >> tmp2;
             break;
 
         case OR:
-            ret = x[rs1] | x[rs2];
+            ret = tmp1 | tmp2;
             break;
         }
     }
@@ -806,23 +817,28 @@ struct instruction
         case LB:
             ret = memory[immediate];
             signed_extend(ret, 8);
+            locknum[rd] = ret;
             break;
 
         case LH:
             ret = (memory[immediate + 1] << 8) + memory[immediate];
             signed_extend(ret, 16);
+            locknum[rd] = ret;
             break;
 
         case LW:
             ret = (memory[immediate + 3] << 24) + (memory[immediate + 2] << 16) + (memory[immediate + 1] << 8) + memory[immediate];
+            locknum[rd] = ret;
             break;
 
         case LBU:
             ret = memory[immediate];
+            locknum[rd] = ret;
             break;
 
         case LHU:
             ret = (unsigned(memory[immediate + 1]) << 8) + memory[immediate];
+            locknum[rd] = ret;
             break;
 
         case SB:
@@ -849,6 +865,7 @@ struct instruction
         default:
             break;
         }
+        load[rd] = false;
     }
 
     void WB()
@@ -912,7 +929,7 @@ int main()
     cin.tie(0);
     cout.tie(0);
 
-    //freopen("pi.data", "r", stdin);
+    //freopen("D:/2019lsq/Documents/riscv-testcases/testcases/pi.data", "r", stdin);
     //freopen("magic_debug_unfinished.txt", "w", stdout);
 
     instruction *lsq = new instruction;
@@ -961,37 +978,31 @@ int main()
 
         if (fetch.state == busy && mem.state == avail)
         {
-            if (reg_lock[fetch.inst.rs1] || reg_lock[fetch.inst.rs2])
+            fetch.inst.EXE();
+            if (fetch.inst.jump_flag)
             {
+                delete lsq;
+                lsq = new instruction;
             }
-            else
-            {
-                fetch.inst.EXE();
-                if (fetch.inst.jump_flag)
-                {
-                    lsq->state = avail;
-                    delete lsq;
-                    lsq = new instruction;
-                }
-                next_IF = true;
-                mem.inst = &fetch.inst;
-                fetch.state = avail;
-                mem.state = busy;
-            }
+            next_IF = true;
+            mem.inst = &fetch.inst;
+            fetch.state = avail;
+            mem.state = busy;
         }
 
         if (fetch.state == avail && lsq->state == busy)
         {
-            lsq->ID();
-            //lsq->show_information();
-            fetch.inst = lsq;
-            fetch.state = busy;
-            if (fetch.inst.jump_flag)
-            {
-                next_IF = false;
+            if (lsq->ID())
+            { //lsq->show_information();
+                fetch.inst = lsq;
+                fetch.state = busy;
+                if (fetch.inst.jump_flag)
+                {
+                    next_IF = false;
+                }
+                delete lsq;
+                lsq = new instruction;
             }
-            delete lsq;
-            lsq = new instruction;
         }
 
         if (next_IF && lsq->state == avail)
