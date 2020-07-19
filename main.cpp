@@ -244,7 +244,8 @@ struct instruction
         {
             cout << dec << (((unsigned int)x[10]) & 255);
             //cout << '\n'
-            //   << wrong_time << "   " << correct_time;
+            //   << wrong_time << "   " << correct_time<< '\n'
+            //   << ((float)correct_time / (correct_time + wrong_time));
             exit(0);
         }
     }
